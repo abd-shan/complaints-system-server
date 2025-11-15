@@ -1,0 +1,205 @@
+// ===============================
+// USERS
+// ===============================
+model User {
+  id                   String    @id @default(uuid())
+  name                 String?
+  phone                String?   @unique
+  email                String    @unique
+  password_hash        String
+  is_verified          Boolean   @default(false)
+  is_super_admin       Boolean   @default(false)
+  failed_attempts      Int       @default(0)
+  account_locked_until DateTime?
+  last_login           DateTime?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @default(now())
+
+  complaints    Complaint[]
+  notifications Notification[]
+}
+
+// ===============================
+// AGENCIES
+// ===============================
+model Agency {
+  id         String   @id @default(uuid())
+  name       String
+  code       String   @unique
+  created_at DateTime @default(now())
+
+  staff      Staff[]
+  complaints Complaint[]
+}
+
+// ===============================
+// STAFF
+// ===============================
+model Staff {
+  id            String   @id @default(uuid())
+  agency_id     String
+  email         String   @unique
+  name          String
+  password_hash String
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @default(now())
+
+  agency             Agency            @relation(fields: [agency_id], references: [id])
+  permissions        StaffPermission[]
+  assignedComplaints Complaint[]       @relation("AssignedTo")
+  lockedComplaints   Complaint[]       @relation("LockedBy")
+
+  historyEntries ComplaintHistory[] @relation("ActorHistory")
+  notes          Note[]
+}
+
+// ===============================
+// PERMISSIONS
+// ===============================
+model Permission {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+
+  staffPermissions StaffPermission[]
+}
+
+model StaffPermission {
+  staff_id      String
+  permission_id Int
+
+  staff      Staff      @relation(fields: [staff_id], references: [id])
+  permission Permission @relation(fields: [permission_id], references: [id])
+
+  @@id([staff_id, permission_id])
+}
+
+// ===============================
+// COMPLAINTS
+// ===============================
+model Complaint {
+  id                String    @id @default(uuid())
+  reference         String    @unique
+  user_id           String
+  agency_id         String
+  category          String
+  title             String
+  description       String
+  status            String    @default("new")
+  assigned_staff_id String?
+  locked_by_id      String?
+  locked_at         DateTime?
+  lock_expires_at   DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @default(now())
+  closed_at         DateTime?
+  version           Int       @default(1)
+
+  location Unsupported("geography")
+
+  user           User   @relation(fields: [user_id], references: [id])
+  agency         Agency @relation(fields: [agency_id], references: [id])
+  assigned_staff Staff? @relation("AssignedTo", fields: [assigned_staff_id], references: [id])
+  locked_by      Staff? @relation("LockedBy", fields: [locked_by_id], references: [id])
+
+  attachments   Attachment[]
+  notes         Note[]
+  history       ComplaintHistory[]
+  notifications Notification[]
+}
+
+// ===============================
+// ATTACHMENTS
+// ===============================
+model Attachment {
+  id           String   @id @default(uuid())
+  complaint_id String
+  url          String
+  content_type String
+  file_name    String
+  created_at   DateTime @default(now())
+
+  complaint Complaint @relation(fields: [complaint_id], references: [id])
+}
+
+// ===============================
+// NOTES
+// ===============================
+model Note {
+  id           String   @id @default(uuid())
+  complaint_id String
+  staff_id     String
+  note         String
+  is_internal  Boolean  @default(true)
+  created_at   DateTime @default(now())
+
+  complaint Complaint @relation(fields: [complaint_id], references: [id])
+  staff     Staff     @relation(fields: [staff_id], references: [id])
+}
+
+// ===============================
+//  NEW: COMBINED HISTORY SYSTEM
+// ===============================
+model ComplaintHistory {
+  id           String @id @default(uuid())
+  complaint_id String
+
+  // event type: "update" | "status_change" | "note_added" | "attachment_added" | ...
+  event_type String
+
+  // who performed this action
+  actor_id   String?
+  actor_type String? // "user" | "staff" | "system" | "admin"
+
+  // optional text (e.g., note content)
+  message String?
+
+  // JSON snapshot of the complaint OR DIFF
+  before Json?
+  after  Json?
+
+  // for attachments
+  attachment_id String?
+  // for notes
+  note_id       String?
+
+  created_at DateTime @default(now())
+
+  complaint   Complaint @relation(fields: [complaint_id], references: [id])
+  actor_staff Staff?    @relation("ActorHistory", fields: [actor_id], references: [id])
+}
+
+// ===============================
+// NOTIFICATIONS
+// ===============================
+model Notification {
+  id              String    @id @default(uuid())
+  user_id         String
+  complaint_id    String
+  channel         String
+  payload         Json
+  attempts        Int       @default(0)
+  last_attempt_at DateTime?
+  sent_at         DateTime?
+  status          String    @default("pending")
+  created_at      DateTime  @default(now())
+
+  user      User      @relation(fields: [user_id], references: [id])
+  complaint Complaint @relation(fields: [complaint_id], references: [id])
+}
+
+// ===============================
+// SYSTEM AUDIT (global)
+// ===============================
+model SystemAudit {
+  id         String   @id @default(uuid())
+  actor_id   String?
+  actor_type String?
+  action     String
+  details    Json?
+  ip_address String?
+  user_agent String?
+  request_id String?
+  created_at DateTime @default(now())
+}
